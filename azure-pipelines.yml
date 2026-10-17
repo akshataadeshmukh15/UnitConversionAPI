@@ -1,0 +1,70 @@
+
+trigger:
+  - master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+
+steps:
+  # Install the required .NET SDK
+  - task: UseDotNet@2
+    displayName: 'Install .NET SDK'
+    inputs:
+      packageType: 'sdk'
+      version: '9.x'
+
+  # Restore dependencies
+  - task: DotNetCoreCLI@2
+    displayName: 'Restore'
+    inputs:
+      command: 'restore'
+      projects: '**/*.sln'
+
+  # Compile the application
+  - task: DotNetCoreCLI@2
+    displayName: 'Build'
+    inputs:
+      command: 'build'
+      projects: '**/*.sln'
+      arguments: '--configuration $(buildConfiguration) --no-restore'
+
+  # Run automated tests
+  - task: DotNetCoreCLI@2
+    displayName: 'Test'
+    inputs:
+      command: 'test'
+      projects: '**/*.sln'
+      arguments: '--configuration $(buildConfiguration) --no-build'
+
+  # Publish the API
+  - task: DotNetCoreCLI@2
+    displayName: 'Publish API'
+    inputs:
+      command: 'publish'
+      publishWebProjects: false
+      projects: '**/UnitConversionAPI.csproj'
+      arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/publish'
+      zipAfterPublish: false
+
+  # Package the published files
+  - task: ArchiveFiles@2
+    displayName: 'Create deployment ZIP'
+    inputs:
+      rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/publish'
+      includeRootFolder: false
+      archiveType: 'zip'
+      archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+      replaceExistingArchive: true
+
+  # Deploy the package to Azure
+  - task: AzureWebApp@1
+    displayName: 'Deploy to Azure App Service'
+    inputs:
+      azureSubscription: 'unit-conversion-azure-connection'
+      appType: 'webAppLinux'
+      appName: 'unit-conversion-api-demo'
+      package: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+      deploymentMethod: 'zipDeploy'
